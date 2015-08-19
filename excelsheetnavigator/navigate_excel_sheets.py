@@ -6,25 +6,21 @@ import unicodedata
 
 class Application(Frame):
 
-    def __init__(self, master, workbook_from_worksheet_names):
+    def __init__(self, master):
         Frame.__init__(self, master)
-
-        self.workbook_from_worksheet_names = workbook_from_worksheet_names
-        self.worksheet_names = workbook_from_worksheet_names.keys()
         
         self.worksheets_label_string = StringVar()
-
-
-
         self.pack()
         self.createWidgets()
-
-        self.show_filtered_worksheet_list()
+        
+        self.model = NavigatorModel(WindowMgr())
+        
+        self.update()
 
     def createWidgets(self):
         self.worksheets_label = Label(self, textvariable = self.worksheets_label_string)
         self.worksheets_label.pack()
-	
+    
         self.text_box = Entry(self, width=30)
         self.text_box.pack({"side": "left"})
         self.text_box.focus_set()
@@ -45,30 +41,56 @@ class Application(Frame):
         elif event.char == '\r': # Enter
             self.enter_press()
         else:
-            self.show_filtered_worksheet_list()
-
-    def show_filtered_worksheet_list(self):
-        current_words = self.text_box.get().split(' ')
-
-        self.filtered_worksheet_list = [worksheet_name for worksheet_name in self.worksheet_names if all(word.lower() in worksheet_name.lower() for word in current_words)]
-        self.filtered_worksheet_list.sort()
-        self.worksheets_label_string.set('\n'.join(self.filtered_worksheet_list))
-
+            self.update()
     
-    def enter_press(self):
-        if len(self.filtered_worksheet_list) == 0:
-            return
-        worksheet_name = self.filtered_worksheet_list[0]
-        workbook = self.workbook_from_worksheet_names[worksheet_name]
-        workbook.Worksheets(worksheet_name).Activate()
-        w = WindowMgr()
-        w.find_window_text(workbook.Name)
-        w.set_foreground()
+    def update(self):
+        text_to_show = self.get_text_to_show()
+        self.display_string(text_to_show)
+        
+    def get_text_to_show(self):
+        entered_text = self.text_box.get()
+        return self.model.text_to_show(entered_text)
+    
+    def display_string(self, s):
+        self.worksheets_label_string.set(s)
 
+    def enter_press(self):
+        if self.get_text_to_show() == '':
+            return
+        self.model.switch_to_first_worksheet_in_list()
         self.quit()
        
     def do_quit(self, event):
         self.quit()
+
+class NavigatorModel:
+
+    def __init__(self, window_mgr):
+        self.window_mgr = window_mgr
+        excel = win32com.client.Dispatch("Excel.Application")
+        self._workbook_from_worksheet_name = {}
+        self._worksheet_names = []
+        for i in range(1, excel.Workbooks.Count+1):
+            workbook = excel.Workbooks(i)
+            for j in range(1, workbook.Worksheets.Count+1):
+                worksheet = workbook.Worksheets(j)
+                self._worksheet_names.append(worksheet.Name)
+                self._workbook_from_worksheet_name[worksheet.Name] = workbook
+        self._filtered_worksheet_list = []
+    
+    def text_to_show(self, text_box_text):
+        current_words = text_box_text.split(' ')
+        self._filtered_worksheet_list = [worksheet_name for worksheet_name in self._worksheet_names if all(word.lower() in worksheet_name.lower() for word in current_words)]
+        self._filtered_worksheet_list.sort()
+        return '\n'.join(self._filtered_worksheet_list)
+        
+    def switch_to_first_worksheet_in_list(self):
+        worksheet_name = self._filtered_worksheet_list[0]
+        workbook = self._workbook_from_worksheet_name[worksheet_name]
+        workbook.Worksheets(worksheet_name).Activate()
+        self.window_mgr.find_window_text(workbook.Name)
+        self.window_mgr.set_foreground()
+    
 
 class WindowMgr:
     """Encapsulates some calls to the winapi for window management"""
@@ -83,9 +105,6 @@ class WindowMgr:
     def _window_enum_callback(self, hwnd, text):
         '''Pass to win32gui.EnumWindows() to check all the opened windows'''
         window_text = str(win32gui.GetWindowText(hwnd))
-        #if u'cand_epg (1).xls' in window_text:
-        #print text
-         #   print window_text
         text = unicodedata.normalize('NFKD', text).encode('ascii', 'ignore')
         if text in window_text and "Microsoft Visual Basic for Applications" not in window_text:
             self._handle = hwnd
@@ -96,31 +115,18 @@ class WindowMgr:
 
     def set_foreground(self):
         """put the window in the foreground"""
-        print self._handle
         win32gui.SetForegroundWindow(self._handle)
 
 
 def main():
-
-
-    excel = win32com.client.Dispatch("Excel.Application")
-    workbook_from_worksheet_name = {}
-    worksheet_names = []
-    for i in range(1, excel.Workbooks.Count+1):
-        workbook = excel.Workbooks(i)
-        for j in range(1, workbook.Worksheets.Count+1):
-            worksheet = workbook.Worksheets(j)
-            worksheet_names.append(worksheet.Name)
-            workbook_from_worksheet_name[worksheet.Name] = workbook
-
+    
     #print worksheet_names
     root = Tk()
-    app = Application(root, workbook_from_worksheet_name)
+    app = Application(root)
     root.bind('<Key>', app.key_press)
     app.mainloop()
     #root.destroy()
 
-
-
+    
 if __name__ == "__main__":
     main()
