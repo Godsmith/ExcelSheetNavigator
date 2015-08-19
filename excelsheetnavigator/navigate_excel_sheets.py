@@ -118,7 +118,7 @@ def main():
     app = Application(root, workbook_from_worksheet_name)
     root.bind('<Key>', app.key_press)
     app.mainloop()
-    root.destroy()
+    #root.destroy()
 
 
 
